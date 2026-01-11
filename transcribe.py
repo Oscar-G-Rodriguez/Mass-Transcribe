@@ -24,18 +24,26 @@ import shutil
 # CONFIG (edit these)
 # =========================
 
+
+# FFMPEG_EXE:
+#   - Full path to ffmpeg executable, or None to auto-detect
+#   - Examples:
+#       FFMPEG_EXE = None
+#       FFMPEG_EXE = r"C:\Path\To\ffmpeg.exe"
+FFMPEG_EXE = 
+
 # INPUT_DIR:
 #   - Possible types: str, Path
 #   - Examples:
 #       INPUT_DIR = r"C:\Users\you\Videos"
 #       INPUT_DIR = "/home/you/videos"
 #       INPUT_DIR = Path("./videos")
-INPUT_DIR = r"./videos"
+INPUT_DIR = 
 
 # OUTPUT_DIR:
 #   - Possible types: str, Path
 #   - Where transcript files will be written
-OUTPUT_DIR = r"./transcripts"
+OUTPUT_DIR = 
 
 # OUTPUT_FORMATS:
 #   - Possible values: "txt", "srt", "json"
@@ -44,7 +52,7 @@ OUTPUT_DIR = r"./transcripts"
 #       ["txt"]
 #       ["srt"]
 #       ["txt", "srt", "json"]
-OUTPUT_FORMATS = ["txt", "srt", "json"]
+OUTPUT_FORMATS = ["json"]
 
 # RECURSIVE:
 #   - Possible types: bool
@@ -107,13 +115,34 @@ SAMPLE_RATE = 16000
 # Helpers
 # =========================
 
+def _ffmpeg_cmd():
+    # Prefer explicit path if provided
+    if FFMPEG_EXE is not None:
+        exe = Path(FFMPEG_EXE)
+        if not exe.exists():
+            raise RuntimeError(f"FFMPEG_EXE does not exist: {exe}")
+        return str(exe)
+
+    # Otherwise try PATH
+    exe = shutil.which("ffmpeg")
+    if exe is not None:
+        return exe
+
+    # Finally try the common WinGet Links location
+    winget_links = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe"
+    if winget_links.exists():
+        return str(winget_links)
+
+    raise RuntimeError(
+        "ffmpeg not found.\n"
+        "Set FFMPEG_EXE to the full path of ffmpeg.exe, or add it to PATH."
+    )
+
+
+
 def _require_ffmpeg():
-    # Ensure ffmpeg is installed
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError(
-            "ffmpeg not found on PATH.\n"
-            "Install ffmpeg and ensure 'ffmpeg' is available in your terminal."
-        )
+    # Validate ffmpeg availability (either explicit path or auto-detect)
+    _ = _ffmpeg_cmd()
 
 def _list_videos(root: Path):
     # Collect video files under root
@@ -133,14 +162,15 @@ def _list_videos(root: Path):
 
 def _extract_audio_to_wav(video_path: Path, wav_path: Path):
     # Extract mono WAV audio using ffmpeg
+    ffmpeg = _ffmpeg_cmd()
     cmd = [
-        "ffmpeg",
-        "-y",                      # overwrite output
+        ffmpeg,
+        "-y",
         "-i", str(video_path),
-        "-vn",                     # disable video
-        "-ac", "1",                # mono
-        "-ar", str(SAMPLE_RATE),   # sample rate
-        "-c:a", "pcm_s16le",       # PCM 16-bit little-endian WAV
+        "-vn",
+        "-ac", "1",
+        "-ar", str(SAMPLE_RATE),
+        "-c:a", "pcm_s16le",
         str(wav_path),
     ]
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
