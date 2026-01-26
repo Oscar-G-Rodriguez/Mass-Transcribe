@@ -30,7 +30,7 @@ import shutil
 #   - Examples:
 #       FFMPEG_EXE = None
 #       FFMPEG_EXE = r"C:\Path\To\ffmpeg.exe"
-FFMPEG_EXE = 
+FFMPEG_EXE = None
 
 # INPUT_DIR:
 #   - Possible types: str, Path
@@ -38,12 +38,12 @@ FFMPEG_EXE =
 #       INPUT_DIR = r"C:\Users\you\Videos"
 #       INPUT_DIR = "/home/you/videos"
 #       INPUT_DIR = Path("./videos")
-INPUT_DIR = 
+INPUT_DIR = r"C:\Users\Oscar\Downloads\vids"
 
 # OUTPUT_DIR:
 #   - Possible types: str, Path
 #   - Where transcript files will be written
-OUTPUT_DIR = 
+OUTPUT_DIR = Path(INPUT_DIR) / "output"
 
 # OUTPUT_FORMATS:
 #   - Possible values: "txt", "srt", "json"
@@ -52,7 +52,17 @@ OUTPUT_DIR =
 #       ["txt"]
 #       ["srt"]
 #       ["txt", "srt", "json"]
-OUTPUT_FORMATS = ["json"]
+OUTPUT_FORMATS = ["txt"]
+
+# COMBINE_TXT:
+#   - Possible types: bool
+#   - If True, writes a single combined transcript text file with titles above each transcript
+COMBINE_TXT = True
+
+# COMBINED_TXT_NAME:
+#   - Possible types: str
+#   - Filename for the combined transcript (written inside OUTPUT_DIR)
+COMBINED_TXT_NAME = "combined_transcript.txt"
 
 # RECURSIVE:
 #   - Possible types: bool
@@ -197,7 +207,7 @@ def _srt_timestamp(seconds: float):
 def _write_txt(path: Path, segments):
     # Write plain transcript text
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = " ".join((s["text"] or "").strip() for s in segments if (s.get("text") or "").strip())
+    text = _segments_to_text(segments)
     path.write_text(text.strip() + "\n", encoding="utf-8")
 
 def _write_srt(path: Path, segments):
@@ -223,6 +233,25 @@ def _write_json(path: Path, segments, meta):
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"meta": meta, "segments": segments}
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+def _segments_to_text(segments):
+    return " ".join((s.get("text") or "").strip() for s in segments if (s.get("text") or "").strip()).strip()
+
+def _title_for_video(video: Path, in_root: Path):
+    # Use relative path when INPUT_DIR is a directory; otherwise, just the filename
+    if in_root.is_dir():
+        return str(video.relative_to(in_root))
+    return video.name
+
+def _write_combined_txt(path: Path, entries):
+    # entries: list of (title, text)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for title, text in entries:
+        lines.append(title)
+        lines.append(text.strip())
+        lines.append("")
+    path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
 # =========================
@@ -346,6 +375,8 @@ def run():
         if f not in valid_formats:
             raise ValueError(f"Invalid format '{f}'. Use only: {sorted(valid_formats)}")
 
+    combined_entries = []
+
     for i, video in enumerate(videos, start=1):
         # Preserve relative folder structure inside OUTPUT_DIR (when INPUT_DIR is a directory)
         if in_root.is_dir():
@@ -367,8 +398,14 @@ def run():
                 all_exist = False
             if "json" in formats and not out_json.exists():
                 all_exist = False
-            if all_exist:
+            if all_exist and (not COMBINE_TXT or out_txt.exists()):
                 print(f"[{i}/{len(videos)}] Skipping (exists): {video}")
+                if COMBINE_TXT:
+                    title = _title_for_video(video, in_root)
+                    try:
+                        combined_entries.append((title, out_txt.read_text(encoding="utf-8").strip()))
+                    except Exception:
+                        print(f"[WARN] Failed to read existing transcript for combined file: {out_txt}")
                 continue
 
         print(f"[{i}/{len(videos)}] Transcribing: {video}")
@@ -386,6 +423,7 @@ def run():
                     segments, meta = _transcribe_openai_whisper(wav_path)
 
             meta["source_video"] = str(video)
+            transcript_text = _segments_to_text(segments)
 
             # Write outputs requested
             if "txt" in formats:
@@ -395,8 +433,16 @@ def run():
             if "json" in formats:
                 _write_json(out_json, segments, meta)
 
+            if COMBINE_TXT:
+                title = _title_for_video(video, in_root)
+                combined_entries.append((title, transcript_text))
+
         except Exception as e:
             print(f"[ERROR] {video}\n{e}")
+
+    if COMBINE_TXT:
+        combined_path = out_root / COMBINED_TXT_NAME
+        _write_combined_txt(combined_path, combined_entries)
 
     print("Done.")
 
