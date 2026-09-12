@@ -1,7 +1,6 @@
 if it doesn't work paste this into your code file's terminal
 
-
-'''# 1) Install Python 3.12 (if not already installed)
+# 1) Install Python 3.12 (if not already installed)
 >> winget install -e --id Python.Python.3.12
 >>
 >> # 2) From your repo folder, create and activate a venv
@@ -14,4 +13,4 @@ if it doesn't work paste this into your code file's terminal
 >> python -m pip install faster-whisper
 >>
 >> # 4) Run with the venv python
->> python .\transcribe.py'''
+>> python .\transcribe.py
